@@ -27,7 +27,29 @@
       "Bash(gh secret *)",
       "Bash(gh api *)",
       "Bash(gh run *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git commit --allow-empty -m ' *)",
+      "WebFetch(domain:www.transsee.ca)",
+      "Bash(grep -oE 'lat[^,;]{1,40}|lon[^,;]{1,40}|vehicle[^,;]{1,60}')",
+      "Bash(grep -oE \"fetch\\\\\\([^\\)]{1,100}\\\\\\)|url[^;]{1,100}json|XMLHttp[^;]{1,80}|open\\\\\\([^\\)]{1,80}\\\\\\)\")",
+      "Bash(grep -oE \"'[^']{5,60}'\")",
+      "Bash(grep -oE \"open\\\\\\(\\\\\"GET\\\\\"[^\\)]{1,150}\\\\\\)\")",
+      "Bash(grep -oE 'open\\\\\\([^\\)]{1,200}\\\\\\)')",
+      "Bash(grep -oE '.{0,120}url.{0,120}')",
+      "Bash(grep -oE \"UpdateMap\\\\\\([^\\)]{1,200}\\\\\\)|driver\\\\.js[^'\\\\\"]{1,100}|vehicle[^'\\\\\"<]{1,100}\")",
+      "Bash(grep -oE \"\\\\.js\\\\?[^'\\\\\"<]{1,150}\")",
+      "Bash(grep -oE '<script[^>]*>[^<]{20,}')",
+      "Bash(grep -oE \"AddBus\\\\\\([^\\)]{1,200}\\\\\\)|AddVehicle\\\\\\([^\\)]{1,200}\\\\\\)|marker\\\\\\([^\\)]{1,100}\\\\\\)\")",
+      "Bash(grep -oE 'AddBus[^;]{1,300}')",
+      "Bash(python3 -c \" import sys, re html = sys.stdin.read\\(\\) scripts = re.findall\\(r'<script[^>]*>\\(.*?\\)</script>', html, re.DOTALL\\) for s in scripts: s = s.strip\\(\\) if s and 'gtag' not in s and 'dataLayer' not in s and len\\(s\\) > 50: print\\('---SCRIPT---'\\) print\\(s[:800]\\) \")",
+      "Bash(grep -oE 'AddBus\\\\\\([^\\)]{1,300}\\\\\\)')",
+      "Bash(grep -oE 'var veh[^;]{1,500}')",
+      "Bash(grep -v \"^$\\\\|^[[:space:]]*$\")",
+      "Bash(grep -v \"^[[:space:]]*$\\\\|TransSee\\\\|dataLayer\\\\|gtag\\\\|GPSStop\\\\|ServiceWorker\\\\|Dir=0\\\\|manifest\\\\|function\\\\|window\\\\.loc\\\\|document\\\\.\")",
+      "Bash(grep -v \"^[A-Za-z]*\\([A-Za-z]\\)$\\\\|^{$\\\\|^}$\\\\|^=$\\\\|^;$\\\\|^||$\")",
+      "Bash(grep -oE 'AddMarker\\\\\\([^\\)]{1,300}\\\\\\)' /tmp/fleetfind.html)",
+      "Bash(grep -oE '<script>[^<]{50,}</script>' /tmp/fleetfind.html)",
+      "Bash(grep -oE 'AddMarker\\\\\\([^\\)]{1,400}\\\\\\)')"
     ]
   }
 }

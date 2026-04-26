@@ -18,8 +18,10 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState(null)
   const [suggestions, setSuggestions] = useState([])
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [busPosition, setBusPosition] = useState(null)
   const inputRef = useRef(null)
   const refreshRef = useRef(null)
+  const posRefreshRef = useRef(null)
 
   // load block list + shuttles on mount
   useEffect(() => {
@@ -70,6 +72,14 @@ export default function Home() {
     setSuggestions(allBlocks.filter(b => b.value.toLowerCase().includes(lower)).slice(0, 8))
   }
 
+  async function fetchPosition(busNum) {
+    try {
+      const res = await fetch(`${API_BASE}/api/bus-position?bus=${encodeURIComponent(busNum)}`)
+      const data = await res.json()
+      if (data.ok) setBusPosition(data)
+    } catch {}
+  }
+
   async function refreshLive(block, busNum) {
     try {
       const param = block ? `block=${encodeURIComponent(block)}` : `bus_number=${encodeURIComponent(busNum)}`
@@ -96,9 +106,11 @@ export default function Home() {
     setPaddle(null)
     setLiveBus(null)
     setLiveBuses([])
+    setBusPosition(null)
     setActiveSection(null)
     setLastUpdated(null)
     if (refreshRef.current) clearInterval(refreshRef.current)
+    if (posRefreshRef.current) clearInterval(posRefreshRef.current)
 
     try {
       if (q.toLowerCase() === 'shuttle') {
@@ -108,8 +120,11 @@ export default function Home() {
       }
 
       if (isBusNumber(q)) {
-        // Bus number lookup
-        const liveRes = await fetch(`${API_BASE}/api/live-buses?bus_number=${encodeURIComponent(q)}`)
+        // Bus number lookup — fetch Supabase assignment + TransSee position in parallel
+        const [liveRes] = await Promise.all([
+          fetch(`${API_BASE}/api/live-buses?bus_number=${encodeURIComponent(q)}`),
+          fetchPosition(q),
+        ])
         const liveData = await liveRes.json()
         const bus = liveData.buses?.[0] || null
         setLiveBus(bus)
@@ -117,7 +132,6 @@ export default function Home() {
         setActiveSection('busnumber')
 
         if (bus?.block) {
-          // also fetch the paddle for that block
           const paddleRes = await fetch(`${API_BASE}/api/paddle?block=${encodeURIComponent(bus.block)}`)
           const paddleData = await paddleRes.json()
           if (paddleData.ok) {
@@ -126,8 +140,8 @@ export default function Home() {
           }
         }
 
-        // poll every 30s for bus number updates
         refreshRef.current = setInterval(() => refreshLive(null, q), 30000)
+        posRefreshRef.current = setInterval(() => fetchPosition(q), 60000)
       } else {
         // Block lookup
         const [paddleRes, liveRes] = await Promise.all([
@@ -149,8 +163,12 @@ export default function Home() {
           setLastUpdated(new Date())
         }
 
-        // poll every 30s for live bus updates
         refreshRef.current = setInterval(() => refreshLive(q, null), 30000)
+        // fetch position for assigned bus if available
+        if (liveData.buses?.[0]?.bus_number) {
+          await fetchPosition(liveData.buses[0].bus_number)
+          posRefreshRef.current = setInterval(() => fetchPosition(liveData.buses[0].bus_number), 60000)
+        }
       }
     } catch {
       setError('Network error — please try again')
@@ -159,8 +177,10 @@ export default function Home() {
     }
   }
 
-  // cleanup polling on unmount
-  useEffect(() => () => { if (refreshRef.current) clearInterval(refreshRef.current) }, [])
+  useEffect(() => () => {
+    if (refreshRef.current) clearInterval(refreshRef.current)
+    if (posRefreshRef.current) clearInterval(posRefreshRef.current)
+  }, [])
 
   function handleKey(e) { if (e.key === 'Enter') lookup() }
 
@@ -221,17 +241,16 @@ export default function Home() {
 
       {/* Bus number lookup result (no block found) */}
       {activeSection === 'busnumber' && (
-        <div className="mb-4">
+        <div className="mb-4 space-y-3">
+          {/* Supabase block assignment */}
           {liveBus ? (
             <div className="bg-slate-800 border border-green-700 rounded-lg px-4 py-4">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  <span className="text-green-400 text-xs font-medium uppercase tracking-wide">Live</span>
+                  <span className="text-green-400 text-xs font-medium uppercase tracking-wide">Live Assignment</span>
                 </div>
-                {lastUpdated && (
-                  <span className="text-slate-500 text-xs">Updated {lastUpdated.toLocaleTimeString()}</span>
-                )}
+                {lastUpdated && <span className="text-slate-500 text-xs">{lastUpdated.toLocaleTimeString()}</span>}
               </div>
               <div className="flex items-center justify-between">
                 <div>
@@ -245,10 +264,43 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : !busPosition?.found && (
             <div className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-4 text-center">
               <p className="text-slate-400 text-sm">Bus #{input} is not currently active.</p>
-              <p className="text-slate-600 text-xs mt-1">No live assignment found in Supabase.</p>
+              <p className="text-slate-600 text-xs mt-1">No live data found.</p>
+            </div>
+          )}
+
+          {/* TransSee GPS position */}
+          {busPosition?.found && (
+            <div className="bg-slate-800 border border-blue-800 rounded-lg px-4 py-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                  <span className="text-blue-300 text-xs font-medium uppercase tracking-wide">Live GPS — TransSee</span>
+                </div>
+                <a href={busPosition.mapsUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-blue-400 hover:text-blue-300 underline">Open in Maps</a>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                <div><span className="text-slate-500">Route </span><span className="text-slate-200">{busPosition.route}</span></div>
+                <div><span className="text-slate-500">Heading </span><span className="text-slate-200">{busPosition.heading}° {headingLabel(busPosition.heading)}</span></div>
+                <div><span className="text-slate-500">Lat </span><span className="text-slate-200 font-mono">{busPosition.lat?.toFixed(5)}</span></div>
+                <div><span className="text-slate-500">Lon </span><span className="text-slate-200 font-mono">{busPosition.lon?.toFixed(5)}</span></div>
+              </div>
+              {busPosition.currentStop && (
+                <p className="text-xs text-slate-300 mb-1"><span className="text-slate-500">Location: </span>{busPosition.currentStop}</p>
+              )}
+              {busPosition.scheduleStatus && (
+                <p className={`text-xs ${busPosition.scheduleStatus.includes('behind') ? 'text-red-400' : 'text-green-400'}`}>
+                  {busPosition.scheduleStatus}
+                </p>
+              )}
+              {busPosition.lastSeen && (
+                <p className="text-xs text-amber-500 mt-1">Last seen {busPosition.lastSeen} ago</p>
+              )}
+              <a href={busPosition.transseeUrl} target="_blank" rel="noopener noreferrer"
+                className="block text-xs text-slate-500 hover:text-slate-300 mt-2">View on TransSee →</a>
             </div>
           )}
         </div>
@@ -302,14 +354,64 @@ export default function Home() {
         <Section
           title="Bus Location"
           badge={
-            liveBuses.length > 0
-              ? <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />{liveBuses.length} live</span>
-              : 'Live'
+            busPosition?.found
+              ? <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />Live GPS</span>
+              : liveBuses.length > 0 ? `${liveBuses.length} live` : 'Live'
           }
           open={activeSection === 'location'}
           onToggle={() => setActiveSection(activeSection === 'location' ? null : 'location')}
         >
-          {liveBuses.length === 0 ? (
+          {/* TransSee GPS position card */}
+          {busPosition?.found && (
+            <div className="bg-slate-800 border border-green-800 rounded-lg px-4 py-3 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-green-300 text-xs font-medium uppercase tracking-wide">Live GPS — TransSee</span>
+                </div>
+                <a href={busPosition.mapsUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-blue-400 hover:text-blue-300 underline">Open in Maps</a>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                <div>
+                  <span className="text-slate-500">Lat </span>
+                  <span className="text-slate-200 font-mono">{busPosition.lat?.toFixed(5)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Lon </span>
+                  <span className="text-slate-200 font-mono">{busPosition.lon?.toFixed(5)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Heading </span>
+                  <span className="text-slate-200">{busPosition.heading}° {headingLabel(busPosition.heading)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Schedule </span>
+                  <span className={busPosition.scheduleStatus?.includes('behind') ? 'text-red-400' : 'text-green-400'}>
+                    {busPosition.scheduleStatus || '—'}
+                  </span>
+                </div>
+              </div>
+              {busPosition.currentStop && (
+                <p className="text-xs text-slate-300">
+                  <span className="text-slate-500">Location: </span>{busPosition.currentStop}
+                </p>
+              )}
+              {busPosition.lastSeen && (
+                <p className="text-xs text-amber-500 mt-1">Last seen {busPosition.lastSeen} ago</p>
+              )}
+              <div className="flex justify-between mt-2">
+                <p className="text-slate-600 text-xs">
+                  {busPosition.fetchedAt ? `Fetched ${new Date(busPosition.fetchedAt).toLocaleTimeString()}` : ''}
+                </p>
+                <a href={busPosition.transseeUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-slate-500 hover:text-slate-300">View on TransSee →</a>
+              </div>
+            </div>
+          )}
+
+          {/* Supabase live bus assignment */}
+          {liveBuses.length === 0 && !busPosition?.found ? (
             <p className="text-sm text-slate-500 italic">No live bus assigned to this block right now.</p>
           ) : (
             <div className="space-y-2">
@@ -440,4 +542,10 @@ function Info({ label, value }) {
 function capitalize(str) {
   if (!str) return ''
   return str.charAt(0).toUpperCase() + str.slice(1)
+}
+
+function headingLabel(deg) {
+  if (deg == null) return ''
+  const dirs = ['N','NE','E','SE','S','SW','W','NW','N']
+  return dirs[Math.round(deg / 45) % 8]
 }
