@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || ''
+
 export default function Home() {
   const [input, setInput] = useState('')
   const [blocks, setBlocks] = useState({ weekday: [], saturday: [], sunday: [] })
@@ -15,7 +17,7 @@ export default function Home() {
 
   // load block list + shuttles on mount
   useEffect(() => {
-    fetch('/api/account-options')
+    fetch(`${API_BASE}/api/account-options`)
       .then(r => r.json())
       .then(d => {
         if (d.blocks) setBlocks(d.blocks)
@@ -84,8 +86,8 @@ export default function Home() {
 
       // fetch paddle + live buses in parallel
       const [paddleRes, liveRes] = await Promise.all([
-        fetch(`/api/paddle?block=${encodeURIComponent(q)}`),
-        fetch(`/api/live-buses?block=${encodeURIComponent(q)}`),
+        fetch(`${API_BASE}/api/paddle?block=${encodeURIComponent(q)}`),
+        fetch(`${API_BASE}/api/live-buses?block=${encodeURIComponent(q)}`),
       ])
       const paddleData = await paddleRes.json()
       const liveData = await liveRes.json()

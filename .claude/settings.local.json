@@ -12,7 +12,19 @@
       "Bash(gh auth *)",
       "Bash(gh repo *)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git remote *)",
+      "Bash(git branch *)",
+      "Bash(git push *)",
+      "Bash(vercel *)",
+      "Bash(npm install *)",
+      "Read(//c/Users/dkp99/.local/share/com.vercel.cli/**)",
+      "Read(//c/Users/dkp99/.config/vercel/**)",
+      "Read(//c/Users/dkp99/.vercel/**)",
+      "Read(//c/Users/dkp99/AppData/Roaming/**)",
+      "Read(//c/Users/dkp99/AppData/Local/**)",
+      "Bash(gh secret *)"
     ]
   }
 }

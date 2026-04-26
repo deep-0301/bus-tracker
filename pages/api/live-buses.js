@@ -6,8 +6,11 @@ const supabase = createClient(
 )
 
 export default async function handler(req, res) {
-  const { block } = req.query
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  if (req.method === 'OPTIONS') return res.status(200).end()
 
+  const { block } = req.query
   let query = supabase
     .from('live_bus_paddles')
     .select('block, route, bus_number, headsign, service_day, paddle_id, start_time, end_time')
