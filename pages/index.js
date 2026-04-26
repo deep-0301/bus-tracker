@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { getSupabase } from '../lib/supabase'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || ''
 
@@ -33,7 +33,7 @@ export default function Home() {
 
   // Supabase Realtime — live_bus_paddles changes update UI instantly
   useEffect(() => {
-    const channel = supabase
+    const channel = getSupabase()
       .channel('live-bus-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'live_bus_paddles' }, payload => {
         setLastUpdated(new Date())
@@ -52,7 +52,7 @@ export default function Home() {
         })
       })
       .subscribe()
-    return () => supabase.removeChannel(channel)
+    return () => getSupabase().removeChannel(channel)
   }, [])
 
   const allBlocks = [
