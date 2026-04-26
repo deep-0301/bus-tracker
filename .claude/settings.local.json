@@ -24,7 +24,9 @@
       "Read(//c/Users/dkp99/.vercel/**)",
       "Read(//c/Users/dkp99/AppData/Roaming/**)",
       "Read(//c/Users/dkp99/AppData/Local/**)",
-      "Bash(gh secret *)"
+      "Bash(gh secret *)",
+      "Bash(gh api *)",
+      "Bash(gh run *)"
     ]
   }
 }

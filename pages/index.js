@@ -3,17 +3,23 @@ import { supabase } from '../lib/supabase'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || ''
 
+// pure digits = bus number, contains dash = block
+function isBusNumber(q) { return /^\d{3,6}$/.test(q.trim()) }
+
 export default function Home() {
   const [input, setInput] = useState('')
   const [blocks, setBlocks] = useState({ weekday: [], saturday: [], sunday: [] })
   const [shuttles, setShuttles] = useState([])
   const [paddle, setPaddle] = useState(null)
-  const [liveBuses, setLiveBuses] = useState([])
+  const [liveBus, setLiveBus] = useState(null)       // single live bus record
+  const [liveBuses, setLiveBuses] = useState([])     // all live buses for a block
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [activeSection, setActiveSection] = useState(null)
   const [suggestions, setSuggestions] = useState([])
+  const [lastUpdated, setLastUpdated] = useState(null)
   const inputRef = useRef(null)
+  const refreshRef = useRef(null)
 
   // load block list + shuttles on mount
   useEffect(() => {
@@ -25,30 +31,30 @@ export default function Home() {
       })
   }, [])
 
-  // Supabase Realtime subscription to live_bus_paddles
+  // Supabase Realtime — live_bus_paddles changes update UI instantly
   useEffect(() => {
     const channel = supabase
       .channel('live-bus-updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'live_bus_paddles' },
-        payload => {
-          setLiveBuses(prev => {
-            if (payload.eventType === 'INSERT') return [...prev, payload.new]
-            if (payload.eventType === 'DELETE')
-              return prev.filter(b => b.block !== payload.old.block)
-            if (payload.eventType === 'UPDATE')
-              return prev.map(b => (b.block === payload.new.block ? payload.new : b))
-            return prev
-          })
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_bus_paddles' }, payload => {
+        setLastUpdated(new Date())
+        setLiveBuses(prev => {
+          if (payload.eventType === 'INSERT') return [...prev, payload.new]
+          if (payload.eventType === 'DELETE') return prev.filter(b => b.block !== payload.old.block)
+          if (payload.eventType === 'UPDATE') return prev.map(b => b.block === payload.new.block ? payload.new : b)
+          return prev
+        })
+        // update single live bus if it matches
+        setLiveBus(prev => {
+          if (!prev) return prev
+          if (payload.eventType === 'DELETE' && prev.bus_number === payload.old.bus_number) return null
+          if (payload.eventType === 'UPDATE' && prev.bus_number === payload.new.bus_number) return payload.new
+          return prev
+        })
+      })
       .subscribe()
-
     return () => supabase.removeChannel(channel)
   }, [])
 
-  // autocomplete suggestions
   const allBlocks = [
     ...blocks.weekday.map(b => ({ label: `${b} (Weekday)`, value: b })),
     ...blocks.saturday.map(b => ({ label: `${b} (Saturday)`, value: b })),
@@ -59,11 +65,25 @@ export default function Home() {
     const val = e.target.value
     setInput(val)
     if (val.length < 2) { setSuggestions([]); return }
+    if (isBusNumber(val)) { setSuggestions([]); return }
     const lower = val.toLowerCase()
-    const matches = allBlocks
-      .filter(b => b.value.toLowerCase().includes(lower))
-      .slice(0, 8)
-    setSuggestions(matches)
+    setSuggestions(allBlocks.filter(b => b.value.toLowerCase().includes(lower)).slice(0, 8))
+  }
+
+  async function refreshLive(block, busNum) {
+    try {
+      const param = block ? `block=${encodeURIComponent(block)}` : `bus_number=${encodeURIComponent(busNum)}`
+      const res = await fetch(`${API_BASE}/api/live-buses?${param}`)
+      const data = await res.json()
+      if (data.ok) {
+        if (block) {
+          setLiveBuses(data.buses || [])
+        } else {
+          setLiveBus(data.buses?.[0] || null)
+        }
+        setLastUpdated(new Date())
+      }
+    } catch {}
   }
 
   async function lookup(query) {
@@ -74,8 +94,11 @@ export default function Home() {
     setLoading(true)
     setError(null)
     setPaddle(null)
+    setLiveBus(null)
     setLiveBuses([])
     setActiveSection(null)
+    setLastUpdated(null)
+    if (refreshRef.current) clearInterval(refreshRef.current)
 
     try {
       if (q.toLowerCase() === 'shuttle') {
@@ -84,22 +107,51 @@ export default function Home() {
         return
       }
 
-      // fetch paddle + live buses in parallel
-      const [paddleRes, liveRes] = await Promise.all([
-        fetch(`${API_BASE}/api/paddle?block=${encodeURIComponent(q)}`),
-        fetch(`${API_BASE}/api/live-buses?block=${encodeURIComponent(q)}`),
-      ])
-      const paddleData = await paddleRes.json()
-      const liveData = await liveRes.json()
+      if (isBusNumber(q)) {
+        // Bus number lookup
+        const liveRes = await fetch(`${API_BASE}/api/live-buses?bus_number=${encodeURIComponent(q)}`)
+        const liveData = await liveRes.json()
+        const bus = liveData.buses?.[0] || null
+        setLiveBus(bus)
+        setLastUpdated(new Date())
+        setActiveSection('busnumber')
 
-      if (paddleData.ok) {
-        setPaddle(paddleData)
-        setActiveSection('paddle')
+        if (bus?.block) {
+          // also fetch the paddle for that block
+          const paddleRes = await fetch(`${API_BASE}/api/paddle?block=${encodeURIComponent(bus.block)}`)
+          const paddleData = await paddleRes.json()
+          if (paddleData.ok) {
+            setPaddle(paddleData)
+            setActiveSection('paddle')
+          }
+        }
+
+        // poll every 30s for bus number updates
+        refreshRef.current = setInterval(() => refreshLive(null, q), 30000)
       } else {
-        setError(paddleData.error || 'Block not found')
-      }
+        // Block lookup
+        const [paddleRes, liveRes] = await Promise.all([
+          fetch(`${API_BASE}/api/paddle?block=${encodeURIComponent(q)}`),
+          fetch(`${API_BASE}/api/live-buses?block=${encodeURIComponent(q)}`),
+        ])
+        const paddleData = await paddleRes.json()
+        const liveData = await liveRes.json()
 
-      if (liveData.ok) setLiveBuses(liveData.buses || [])
+        if (paddleData.ok) {
+          setPaddle(paddleData)
+          setActiveSection('paddle')
+        } else {
+          setError(paddleData.error || 'Block not found')
+        }
+
+        if (liveData.ok) {
+          setLiveBuses(liveData.buses || [])
+          setLastUpdated(new Date())
+        }
+
+        // poll every 30s for live bus updates
+        refreshRef.current = setInterval(() => refreshLive(q, null), 30000)
+      }
     } catch {
       setError('Network error — please try again')
     } finally {
@@ -107,13 +159,16 @@ export default function Home() {
     }
   }
 
-  function handleKey(e) {
-    if (e.key === 'Enter') lookup()
-  }
+  // cleanup polling on unmount
+  useEffect(() => () => { if (refreshRef.current) clearInterval(refreshRef.current) }, [])
+
+  function handleKey(e) { if (e.key === 'Enter') lookup() }
 
   const today = new Date().toLocaleDateString('en-CA', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   })
+
+  const assignedBusNumber = liveBuses.length > 0 ? liveBuses[0].bus_number : null
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col max-w-lg mx-auto px-4 py-6">
@@ -145,15 +200,11 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Autocomplete */}
         {suggestions.length > 0 && (
           <ul className="absolute z-10 top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg overflow-hidden shadow-xl">
             {suggestions.map(s => (
-              <li
-                key={s.label}
-                onClick={() => lookup(s.value)}
-                className="px-4 py-2 text-sm hover:bg-slate-700 cursor-pointer text-slate-200"
-              >
+              <li key={s.label} onClick={() => lookup(s.value)}
+                className="px-4 py-2 text-sm hover:bg-slate-700 cursor-pointer text-slate-200">
                 {s.label}
               </li>
             ))}
@@ -168,6 +219,41 @@ export default function Home() {
         </div>
       )}
 
+      {/* Bus number lookup result (no block found) */}
+      {activeSection === 'busnumber' && (
+        <div className="mb-4">
+          {liveBus ? (
+            <div className="bg-slate-800 border border-green-700 rounded-lg px-4 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-green-400 text-xs font-medium uppercase tracking-wide">Live</span>
+                </div>
+                {lastUpdated && (
+                  <span className="text-slate-500 text-xs">Updated {lastUpdated.toLocaleTimeString()}</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-2xl font-bold text-white">Bus #{liveBus.bus_number}</p>
+                  <p className="text-blue-400 text-sm mt-1">Block {liveBus.block} — Route {liveBus.route}</p>
+                  <p className="text-slate-300 text-sm">{liveBus.headsign}</p>
+                </div>
+                <div className="text-right text-xs text-slate-400">
+                  <p>{liveBus.start_time}</p>
+                  <p>{liveBus.end_time}</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-4 text-center">
+              <p className="text-slate-400 text-sm">Bus #{input} is not currently active.</p>
+              <p className="text-slate-600 text-xs mt-1">No live assignment found in Supabase.</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Paddle Section */}
       {paddle && (
         <Section
@@ -177,6 +263,20 @@ export default function Home() {
           onToggle={() => setActiveSection(activeSection === 'paddle' ? null : 'paddle')}
         >
           <div className="space-y-3 text-sm">
+            {/* Live bus number badge */}
+            {assignedBusNumber && (
+              <div className="flex items-center gap-3 bg-green-900/30 border border-green-700 rounded-lg px-3 py-2">
+                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
+                <div>
+                  <span className="text-green-300 text-xs uppercase tracking-wide font-medium">Live Bus Assigned</span>
+                  <p className="text-white font-bold text-lg leading-none mt-0.5">Bus #{assignedBusNumber}</p>
+                </div>
+                {lastUpdated && (
+                  <span className="ml-auto text-slate-500 text-xs">{lastUpdated.toLocaleTimeString()}</span>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
               <Info label="Paddle ID" value={paddle.paddleId} />
               <Info label="Service Day" value={capitalize(paddle.serviceDay)} />
@@ -201,24 +301,32 @@ export default function Home() {
       {paddle && (
         <Section
           title="Bus Location"
-          badge={liveBuses.length > 0 ? `${liveBuses.length} live` : 'Live'}
+          badge={
+            liveBuses.length > 0
+              ? <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />{liveBuses.length} live</span>
+              : 'Live'
+          }
           open={activeSection === 'location'}
           onToggle={() => setActiveSection(activeSection === 'location' ? null : 'location')}
         >
           {liveBuses.length === 0 ? (
-            <p className="text-sm text-slate-500 italic">
-              No live bus data for this block right now.
-            </p>
+            <p className="text-sm text-slate-500 italic">No live bus assigned to this block right now.</p>
           ) : (
             <div className="space-y-2">
               {liveBuses.map((b, i) => (
-                <div key={i} className="bg-slate-800 rounded-lg px-4 py-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-white font-medium">Bus #{b.bus_number}</span>
-                    <span className="text-blue-400">{b.route}</span>
+                <div key={i} className="bg-slate-800 rounded-lg px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                      <span className="text-white font-bold text-lg">Bus #{b.bus_number}</span>
+                    </div>
+                    <span className="text-blue-400 text-sm font-medium">Route {b.route}</span>
                   </div>
-                  <p className="text-slate-400 text-xs mt-1">{b.headsign}</p>
-                  <p className="text-slate-500 text-xs">{b.start_time} → {b.end_time}</p>
+                  <p className="text-slate-300 text-sm mt-1">{b.headsign}</p>
+                  <p className="text-slate-500 text-xs mt-0.5">{b.start_time} → {b.end_time}</p>
+                  {lastUpdated && (
+                    <p className="text-slate-600 text-xs mt-1">Updated {lastUpdated.toLocaleTimeString()}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -247,15 +355,14 @@ export default function Home() {
       )}
 
       {/* Quick tip */}
-      {!paddle && !loading && (
+      {!paddle && activeSection !== 'busnumber' && !loading && (
         <div className="text-slate-500 text-xs mt-4 space-y-1">
           <p>Use format <span className="text-slate-300">route-block</span>, e.g. <span className="text-slate-300">44-07</span></p>
-          <p>Type a bus number like <span className="text-slate-300">6525</span> for live location</p>
+          <p>Type a bus number like <span className="text-slate-300">6525</span> to see its live block assignment</p>
           <p>Type <span className="text-slate-300">shuttle</span> to see today's shuttles</p>
         </div>
       )}
 
-      {/* Safety notice */}
       <p className="mt-auto pt-8 text-slate-600 text-xs">
         Do not use your phone while operating the bus, and always follow the deadheads shown on the paddle.
       </p>
@@ -266,13 +373,11 @@ export default function Home() {
 function Section({ title, badge, open, onToggle, children }) {
   return (
     <div className="mb-3 border border-slate-700 rounded-lg overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-800 hover:bg-slate-750 text-left"
-      >
+      <button onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3 bg-slate-800 hover:bg-slate-750 text-left">
         <span className="font-medium text-white">{title}</span>
         <div className="flex items-center gap-2">
-          {badge && <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">{badge}</span>}
+          {badge && <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full flex items-center gap-1">{badge}</span>}
           <span className="text-slate-400 text-lg leading-none">{open ? '−' : '+'}</span>
         </div>
       </button>
@@ -308,10 +413,8 @@ function TripCard({ trip }) {
       )}
       {trip.notes && <p className="text-xs text-yellow-400 mt-1">{trip.notes}</p>}
       {hasDirs && (
-        <button
-          onClick={() => setShowDirs(v => !v)}
-          className="mt-2 text-xs text-blue-500 hover:text-blue-400"
-        >
+        <button onClick={() => setShowDirs(v => !v)}
+          className="mt-2 text-xs text-blue-500 hover:text-blue-400">
           {showDirs ? 'Hide' : 'Show'} deadhead directions
         </button>
       )}

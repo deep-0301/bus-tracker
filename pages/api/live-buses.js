@@ -10,12 +10,13 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { block } = req.query
+  const { block, bus_number } = req.query
   let query = supabase
     .from('live_bus_paddles')
     .select('block, route, bus_number, headsign, service_day, paddle_id, start_time, end_time')
 
   if (block) query = query.eq('block', block)
+  if (bus_number) query = query.eq('bus_number', bus_number)
 
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
