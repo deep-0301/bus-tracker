@@ -26,7 +26,8 @@
       "Read(//c/Users/dkp99/AppData/Local/**)",
       "Bash(gh secret *)",
       "Bash(gh api *)",
-      "Bash(gh run *)"
+      "Bash(gh run *)",
+      "Bash(npm run *)"
     ]
   }
 }
