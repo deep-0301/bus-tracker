@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:oc-bus-tracker.vercel.app)",
+      "WebSearch",
+      "WebFetch(domain:fvcqnceexmaaagdbmwms.supabase.co)",
+      "Bash(curl -s 'https://fvcqnceexmaaagdbmwms.supabase.co/rest/v1/paddle?select=*&limit=3' -H 'apikey: sb_publishable_DaHa-QQo_5CLHtsUJurVhg_-MpUdEnJ' -H 'Authorization: Bearer sb_publishable_DaHa-QQo_5CLHtsUJurVhg_-MpUdEnJ')",
+      "Bash(curl -s 'https://fvcqnceexmaaagdbmwms.supabase.co/rest/v1/location?select=*&limit=3' -H 'apikey: sb_publishable_DaHa-QQo_5CLHtsUJurVhg_-MpUdEnJ' -H 'Authorization: Bearer sb_publishable_DaHa-QQo_5CLHtsUJurVhg_-MpUdEnJ')",
+      "Bash(curl -s 'https://fvcqnceexmaaagdbmwms.supabase.co/rest/v1/buses?select=*&limit=3' -H 'apikey: sb_publishable_DaHa-QQo_5CLHtsUJurVhg_-MpUdEnJ' -H 'Authorization: Bearer sb_publishable_DaHa-QQo_5CLHtsUJurVhg_-MpUdEnJ')",
+      "Bash(curl -s 'https://fvcqnceexmaaagdbmwms.supabase.co/rest/v1/blocks?select=*&limit=3' -H 'apikey: sb_publishable_DaHa-QQo_5CLHtsUJurVhg_-MpUdEnJ' -H 'Authorization: Bearer sb_publishable_DaHa-QQo_5CLHtsUJurVhg_-MpUdEnJ')",
+      "Bash(curl *)",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
